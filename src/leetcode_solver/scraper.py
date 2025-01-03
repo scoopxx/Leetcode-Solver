@@ -332,6 +332,7 @@ def scrape_leetcode_problem(url, gemini_parser=None):
             exampleTestcases
             sampleTestCase
             metaData
+            codeDefinition
         }
     }
     '''
@@ -370,6 +371,13 @@ def scrape_leetcode_problem(url, gemini_parser=None):
         example_test_cases = extract_test_cases_from_description(description, metadata)
     
     parsed_test_cases = parse_test_cases(data['exampleTestcases'], num_params)
+
+    # Get code definition in Python
+    code_definitions = json.loads(data['codeDefinition'])
+    defaultCode = ''
+    for definition in code_definitions:
+        if definition['value'] == 'python3':
+            defaultCode = definition['defaultCode']
     
     result = {
         'url': url,
@@ -381,6 +389,7 @@ def scrape_leetcode_problem(url, gemini_parser=None):
             'params': metadata.get('params', {}),
             'return': metadata.get('return', {})
         },
+        'default_code': defaultCode,
         'test_cases': parsed_test_cases,
         'test_cases_with_answers': example_test_cases
     }
@@ -439,7 +448,7 @@ def scrape_all_leetcode_problems(data_dir, limit=None, skip=0, gemini_parser=Non
             # Check if we've reached the limit
             if limit and total_scraped >= limit:
                 logger.info(f"Reached limit of {limit} problems")
-                return
+                return total_scraped
                 
             try:
                 # Scrape detailed problem data
