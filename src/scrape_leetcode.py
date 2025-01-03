@@ -3,11 +3,9 @@ import os
 import sys
 import argparse
 import logging
-import json
 from dotenv import load_dotenv
 from leetcode_solver.scraper import scrape_all_leetcode_problems
-from leetcode_solver.llm_solver import LLMCodeSolver, load_problem, LeetCodeSubmitter
-from leetcode_solver.llm_manager import LLMManager
+from leetcode_solver.gemini_parser import LeetCodeGeminiParser
 
 load_dotenv()
 
@@ -19,7 +17,7 @@ def setup_logging():
         datefmt='%Y-%m-%d %H:%M:%S'
     )
 
-def prepare_data():
+def main():
     # Set up argument parser
     parser = argparse.ArgumentParser(description='LeetCode Problem Scraper')
     parser.add_argument(
@@ -31,7 +29,7 @@ def prepare_data():
         '--limit',
         type=int,
         default=50,
-        help='Maximum number of problems to scrape (default: no limit)'
+        help='Maximum number of problems to scrape (default: 50)'
     )
     parser.add_argument(
         '--skip',
@@ -62,7 +60,6 @@ def prepare_data():
     if not args.no_gemini:
         api_key = os.getenv('GOOGLE_API_KEY')
         if api_key:
-            from leetcode_solver.gemini_parser import LeetCodeGeminiParser
             gemini_parser = LeetCodeGeminiParser(api_key)
             logger.info("Initialized Gemini parser")
         else:
@@ -89,38 +86,5 @@ def prepare_data():
         logger.error(f"Error during scraping: {str(e)}")
         sys.exit(1)
 
-def solve_question():
-    setup_logging()
-    logger = logging.getLogger(__name__)
-    data_dir = "/Users/hxx/projects/leetcode-solver/data"
-    
-    # Load problems
-    twosum = load_problem(os.path.join(data_dir, "1_two-sum.json"))
-    add_two_numbers = load_problem(os.path.join(data_dir, "2_add-two-numbers.json"))
-    
-    # Initialize LLM manager
-    llm_manager = LLMManager()
-    llm_manager.setup_default_models(google_api_key=os.getenv("GOOGLE_API_KEY"))
-    
-    # Initialize solver with manager
-    solver = LLMCodeSolver(llm_manager)
-    
-    # Generate solution
-    try:
-        proposed_solution = solver.solve(twosum, add_two_numbers)
-        print("\nGenerated Solution:")
-        print(proposed_solution)
-    except Exception as e:
-        logger.error(f"Failed to solve problem: {str(e)}")
-
-    # Submit solution
-    submitter = LeetCodeSubmitter(max_retries=3, backoff_factor=0.5)
-    session_cookie = submitter.get_leetcode_session(
-        os.getenv("LEETCODE_USERNAME"), 
-        os.getenv("LEETCODE_PASSWORD"))
-    result = submitter.submit_leetcode(add_two_numbers['id'], proposed_solution, session_cookie)
-    logger.info(f"Submission result: {result}")
-
-
 if __name__ == "__main__":
-    solve_question()
+    main()

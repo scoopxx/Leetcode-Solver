@@ -5,6 +5,8 @@ import re
 import os
 import logging
 import time
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 
 # Configure logging
 logging.basicConfig(
@@ -480,3 +482,94 @@ def scrape_all_leetcode_problems(data_dir, limit=None, skip=0, gemini_parser=Non
     
     logger.info(f"Finished scraping {total_scraped} problems")
     return total_scraped
+
+
+class LeetCodeSubmitter:
+    def __init__(self, max_retries=3, backoff_factor=0.5):
+        self.max_retries = max_retries
+        self.backoff_factor = backoff_factor
+        self.session = self._create_session()
+    
+    def _create_session(self):
+        session = requests.Session()
+        retry_strategy = Retry(
+            total=self.max_retries,
+            backoff_factor=self.backoff_factor,
+            status_forcelist=[429, 500, 502, 503, 504],
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+        return session
+
+    def get_leetcode_session(self, username, password, max_attempts=3):
+        for attempt in range(max_attempts):
+            try:
+                login_data = {
+                    'login': username,
+                    'password': password
+                }
+                response = self.session.post(
+                    'https://leetcode.com/accounts/login/', 
+                    data=login_data,
+                    timeout=10
+                )
+                response.raise_for_status()
+                session_cookie = self.session.cookies.get('LEETCODE_SESSION')
+                if session_cookie:
+                    return session_cookie
+                raise Exception("Session cookie not found")
+            
+            except Exception as e:
+                if attempt == max_attempts - 1:
+                    raise Exception(f"Failed to get session after {max_attempts} attempts: {str(e)}")
+                wait_time = (2 ** attempt) * self.backoff_factor
+                time.sleep(wait_time)
+        
+        return None
+
+    def submit_leetcode(self, question_id, code, session_cookie, max_attempts=3):
+        headers = {
+            'Cookie': f'LEETCODE_SESSION={session_cookie}',
+            'Content-Type': 'application/json'
+        }
+        
+        mutation = '''
+        mutation submitCode($questionId: Int!, $code: String!) {
+            submitCode(questionId: $questionId, code: $code) {
+                interpretation
+                submissionId
+                status
+                statusDisplay
+            }
+        }
+        '''
+        
+        for attempt in range(max_attempts):
+            try:
+                response = self.session.post(
+                    'https://leetcode.com/graphql',
+                    json={
+                        'query': mutation,
+                        'variables': {
+                            'questionId': question_id,
+                            'code': code
+                        }
+                    },
+                    headers=headers,
+                    timeout=10
+                )
+                response.raise_for_status()
+                result = response.json()
+                
+                # Check for specific LeetCode errors in response
+                if 'errors' in result:
+                    raise Exception(f"LeetCode API error: {result['errors']}")
+                
+                return result
+            
+            except Exception as e:
+                if attempt == max_attempts - 1:
+                    raise Exception(f"Failed to submit code after {max_attempts} attempts: {str(e)}")
+                wait_time = (2 ** attempt) * self.backoff_factor
+                time.sleep(wait_time)
