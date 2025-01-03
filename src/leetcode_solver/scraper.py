@@ -4,6 +4,7 @@ from bs4 import BeautifulSoup
 import re
 import os
 import logging
+import time
 
 # Configure logging
 logging.basicConfig(
@@ -466,7 +467,6 @@ def scrape_all_leetcode_problems(data_dir, limit=None, skip=0, gemini_parser=Non
             break
             
         # Optional delay between batches
-        import time
         time.sleep(10)  # Be nice to LeetCode's servers
     
     logger.info(f"Finished scraping {total_scraped} problems")
