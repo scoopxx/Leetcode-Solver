@@ -46,6 +46,50 @@ LeetCode: https://leetcode.com/problems/{target_problem['titleSlug']}/
     
     return filepath
 
+def solve_problem(problem_id: int, args, solver: LLMCodeSolver, logger: logging.Logger):
+    """Solve a single problem"""
+    # Find problem files
+    problem_files = [f for f in os.listdir(args.data_dir) if f.startswith(f'{problem_id}_')]
+    example_files = [f for f in os.listdir(args.data_dir) if f.startswith(f'{args.example_id}_')]
+    
+    if not example_files:
+        logger.error(f"Example problem {args.example_id} not found in {args.data_dir}")
+        return False
+    if not problem_files:
+        logger.error(f"Problem {problem_id} not found in {args.data_dir}")
+        return False
+    
+    try:
+        # Load problems
+        example_problem = load_problem(os.path.join(args.data_dir, example_files[0]))
+        target_problem = load_problem(os.path.join(args.data_dir, problem_files[0]))
+        
+        # Generate solution
+        logger.info(f"Solving problem {problem_id} using example {args.example_id}")
+        solution = solver.solve(example_problem, target_problem, model_name=args.model)
+        logger.info(f"\nGenerated Solution for problem {problem_id}:\n{solution}")
+        
+        # Save solution if requested
+        if not args.no_save:
+            filepath = save_solution(solution, target_problem, args.save_dir)
+            logger.info(f"Saved solution to: {filepath}")
+        
+        # Submit if requested
+        if args.submit:
+            leetcode_session = os.getenv("LEETCODE_SESSION")
+            logger.info(f"Using LeetCode session cookie: {leetcode_session}")
+            
+            logger.info(f"Submitting solution for problem {problem_id}")
+            submitter = LeetCodeSubmitter(max_retries=3, backoff_factor=0.5)
+            result = submitter.submit_leetcode(target_problem, solution, leetcode_session)
+            logger.info(f"Submission result for problem {problem_id}: {result}")
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error solving problem {problem_id}: {str(e)}")
+        return False
+
 def main():
     # Set up argument parser
     parser = argparse.ArgumentParser(description='LeetCode Problem Solver')
@@ -66,10 +110,15 @@ def main():
         help='ID of the example problem to use'
     )
     parser.add_argument(
-        '--problem-id',
+        '--start',
         type=int,
         required=True,
-        help='ID of the problem to solve'
+        help='ID of the first problem to solve'
+    )
+    parser.add_argument(
+        '--end',
+        type=int,
+        help='ID of the last problem to solve (optional, if not provided only solves start problem)'
     )
     parser.add_argument(
         '--model',
@@ -86,6 +135,11 @@ def main():
         action='store_true',
         help='Do not save the solution to a file'
     )
+    parser.add_argument(
+        '--continue-on-error',
+        action='store_true',
+        help='Continue solving next problem if current one fails'
+    )
     
     args = parser.parse_args()
     
@@ -94,43 +148,41 @@ def main():
     logger = logging.getLogger(__name__)
     
     try:
-        # Find problem files
-        example_files = [f for f in os.listdir(args.data_dir) if f.startswith(f'{args.example_id}_')]
-        problem_files = [f for f in os.listdir(args.data_dir) if f.startswith(f'{args.problem_id}_')]
-        
-        if not example_files:
-            raise ValueError(f"Example problem {args.example_id} not found in {args.data_dir}")
-        if not problem_files:
-            raise ValueError(f"Problem {args.problem_id} not found in {args.data_dir}")
-        
-        # Load problems
-        example_problem = load_problem(os.path.join(args.data_dir, example_files[0]))
-        target_problem = load_problem(os.path.join(args.data_dir, problem_files[0]))
-        
         # Initialize LLM manager and solver
         llm_manager = LLMManager()
         llm_manager.setup_default_models(google_api_key=os.getenv("GOOGLE_API_KEY"))
         solver = LLMCodeSolver(llm_manager)
         
-        # Generate solution
-        logger.info(f"Solving problem {args.problem_id} using example {args.example_id}")
-        solution = solver.solve(example_problem, target_problem, model_name=args.model)
-        logger.info(f"\nGenerated Solution:\n {solution}")
+        # Determine problem range
+        start_id = args.start
+        end_id = args.end if args.end else start_id
         
-        # Save solution if requested
-        if not args.no_save:
-            filepath = save_solution(solution, target_problem, args.save_dir)
-            logger.info(f"Saved solution to: {filepath}")
+        if end_id < start_id:
+            raise ValueError("End ID must be greater than or equal to Start ID")
         
-        # Submit if requested
-        if args.submit:
-            leetcode_session = os.getenv("LEETCODE_SESSION")
-            logger.info(f"Using LeetCode session cookie: {leetcode_session}")
-            
-            logger.info("Submitting solution to LeetCode")
-            submitter = LeetCodeSubmitter(max_retries=3, backoff_factor=0.5)
-            result = submitter.submit_leetcode(target_problem, solution, leetcode_session)
-            logger.info(f"Submission result: {result}")
+        # Track success/failure
+        results = {
+            'total': end_id - start_id + 1,
+            'succeeded': 0,
+            'failed': 0
+        }
+        
+        # Solve problems in range
+        for problem_id in range(start_id, end_id + 1):
+            success = solve_problem(problem_id, args, solver, logger)
+            if success:
+                results['succeeded'] += 1
+            else:
+                results['failed'] += 1
+                if not args.continue_on_error:
+                    logger.error("Stopping due to error. Use --continue-on-error to continue on failures.")
+                    break
+        
+        # Print summary
+        logger.info("\nSummary:")
+        logger.info(f"Total problems: {results['total']}")
+        logger.info(f"Succeeded: {results['succeeded']}")
+        logger.info(f"Failed: {results['failed']}")
         
     except Exception as e:
         logger.error(f"Error: {str(e)}")

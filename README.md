@@ -36,17 +36,25 @@ Generate solutions using LLM and optionally submit them to LeetCode:
 
 ```bash
 # Generate solution for problem #50
-pdm run python src/solve_leetcode.py --problem-id 50
+pdm run python src/solve_leetcode.py --start 50
+
+# Solve problems 50 through 55
+pdm run python src/solve_leetcode.py --start 50 --end 55
+
+# Continue on errors when solving multiple problems
+pdm run python src/solve_leetcode.py --start 50 --end 55 --continue-on-error
+
+# Use a different example problem (default is Two Sum, problem #1)
+pdm run python src/solve_leetcode.py --start 50 --example-id 2
 
 # Save solution to a custom directory
-pdm run python src/solve_leetcode.py --problem-id 50 --save-dir ./my_solutions
+pdm run python src/solve_leetcode.py --start 50 --save-dir ./my_solutions
 
 # Generate without saving to file
-pdm run python src/solve_leetcode.py --problem-id 50 --no-save
+pdm run python src/solve_leetcode.py --start 50 --no-save
 
 # Generate and submit to LeetCode
-# TODO, the submission is not working for now.
-pdm run python src/solve_leetcode.py --problem-id 50 --submit
+pdm run python src/solve_leetcode.py --start 50 --submit
 ```
 
 Solutions will be saved to `data/solutions/` directory by default.
